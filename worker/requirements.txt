@@ -1,0 +1,12 @@
+fastapi==0.115.6
+httpx==0.28.1
+python-multipart==0.0.20
+python-telegram-bot==21.9
+uvicorn[standard]==0.34.0
+faster-whisper==1.2.1
+# faster-whisper 仍用 av.open(..., metadata_errors=...)，av 14+ 删掉了这个参数
+av==13.1.0
+# faster-whisper 的 utils 直接 import requests，但它没有声明这个依赖
+requests==2.32.3
+# 任务完成后给手机扫码下载用的二维码（纯 Python，SVG 输出，不需要 Pillow）
+qrcode==8.0

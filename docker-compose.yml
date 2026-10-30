@@ -1,0 +1,127 @@
+services:
+  # 给 Prowlarr 打开 Cloudflare 站点用（1337x / TPB / EZTV / 0Magnet 等）。
+  # 内部跑一个 Chromium 过 JS 挑战，只绑定 127.0.0.1，不对外。
+  flaresolverr:
+    image: ghcr.io/flaresolverr/flaresolverr:latest
+    container_name: media-automation-flaresolverr
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8191:8191"
+    environment:
+      - LOG_LEVEL=info
+      - TZ=Asia/Shanghai
+      # 浏览器本身也要走宿主机代理，否则访问不到被墙的目标站
+      - PROXY_URL=${PROXY_URL:-${MEDIA_HTTP_PROXY:-http://host.docker.internal:7897}}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  # Prowlarr 聚合磁力/种子索引器，qBittorrent 负责实际下载。
+  # 两个管理界面都只绑定 127.0.0.1，避免把未改密码的后台暴露到局域网。
+  prowlarr:
+    image: lscr.io/linuxserver/prowlarr:latest
+    container_name: media-automation-prowlarr
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:9696:9696"
+    volumes:
+      - ./prowlarr/config:/config
+    environment:
+      - TZ=Asia/Shanghai
+      - PUID=1000
+      - PGID=1000
+      # 索引器大多在墙外：让 Prowlarr 走宿主机代理（Clash 7897）。
+      # 不用 TUN 模式也能访问；改端口时同步改 .env 的 MEDIA_HTTP_PROXY。
+      - HTTP_PROXY=${PROWLARR_HTTP_PROXY:-${MEDIA_HTTP_PROXY:-http://host.docker.internal:7897}}
+      - HTTPS_PROXY=${PROWLARR_HTTPS_PROXY:-${MEDIA_HTTPS_PROXY:-http://host.docker.internal:7897}}
+      - NO_PROXY=localhost,127.0.0.1,host.docker.internal,qbittorrent,flaresolverr
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  qbittorrent:
+    image: lscr.io/linuxserver/qbittorrent:latest
+    container_name: media-automation-qbittorrent
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8081:8081"
+      - "6881:6881"
+      - "6881:6881/udp"
+    volumes:
+      - ./qbittorrent/config:/config
+      - ./media/downloads:/downloads
+    environment:
+      - TZ=Asia/Shanghai
+      - PUID=1000
+      - PGID=1000
+      - WEBUI_PORT=8081
+      - TORRENTING_PORT=6881
+
+  # 115-Station 的资源搜索和离线下载。它的 Telegram 机器人请使用独立 Bot Token，
+  # 或只使用管理后台；本项目 worker 的 Bot Token 不要重复配置给两个轮询进程。
+  station:
+    image: ghcr.io/pancras-loe/115-station:latest
+    container_name: media-automation-115-station
+    profiles: [station]
+    restart: unless-stopped
+    stop_grace_period: 20s
+    ports:
+      - "6060:6060"
+      - "6086:6086"
+    volumes:
+      - ./station/config:/config
+      - ./station/data:/data
+      # 与 worker 共享同一个媒体目录，下载完成的视频才能进入字幕处理流程。
+      - ./media:/media
+      - ./station/logs:/logs
+    environment:
+      - TZ=Asia/Shanghai
+      - AUTH_USER=${STATION_AUTH_USER:-admin}
+      - AUTH_PASSWORD=${STATION_AUTH_PASSWORD:-change-me}
+
+  worker:
+    build:
+      context: ./worker
+      args:
+        FFMPEG_URL: ${FFMPEG_URL:-}
+    container_name: media-automation-worker
+    restart: unless-stopped
+    env_file: .env
+    # 当前 Mac 的网络由 Clash Verge 提供代理；容器直连 Telegram 会被路由拦截。
+    # 代理只用于 worker 的 Telegram、翻译和模型下载请求，不影响本地媒体目录。
+    environment:
+      - HTTP_PROXY=${MEDIA_HTTP_PROXY:-http://host.docker.internal:7897}
+      - HTTPS_PROXY=${MEDIA_HTTPS_PROXY:-http://host.docker.internal:7897}
+      - NO_PROXY=localhost,127.0.0.1,host.docker.internal,station,prowlarr,qbittorrent
+      - PROWLARR_URL=${PROWLARR_URL:-http://prowlarr:9696}
+      - QBITTORRENT_URL=${QBITTORRENT_URL:-http://qbittorrent:8081}
+      - QBITTORRENT_DOWNLOAD_DIR=/downloads
+      # whisper 模型缓存放到 /data 里，重建镜像/重启容器不用重新下 500MB
+      - HF_HOME=/data/huggingface
+      # 处理完成的成品自动复制到这里（宿主机 D:\MediaDownloads）
+      - ARCHIVE_DIR=/archive
+      # 网页上展示的宿主机路径
+      - ARCHIVE_DISPLAY=${ARCHIVE_HOST_DIR:-D:/MediaDownloads}
+    ports:
+      - "8787:8787"
+    volumes:
+      - ./data:/data
+      - ./media:/media
+      # qBittorrent 下载完成后，worker 从这里读取并硬链接到 inbox。
+      - ./media/downloads:/downloads:ro
+      - ./fonts:/usr/local/share/fonts/custom:ro
+      # 成品自动归档目录（宿主机路径可用 .env 的 ARCHIVE_HOST_DIR 覆盖）
+      - ${ARCHIVE_HOST_DIR:-D:/MediaDownloads}:/archive
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  # 可选：只需要在线播放时再启动：docker compose --profile player up -d
+  jellyfin:
+    image: jellyfin/jellyfin:latest
+    container_name: media-automation-jellyfin
+    profiles: [player]
+    restart: unless-stopped
+    ports:
+      - "8096:8096"
+    volumes:
+      - ./jellyfin/config:/config
+      - ./jellyfin/cache:/cache
+      - ./media/output:/media:ro

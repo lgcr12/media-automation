@@ -1,0 +1,44 @@
+.env
+.DS_Store
+
+# 运行时配置与任务状态（含密钥，不要提交）
+data/settings.json
+data/settings.tmp
+data/jobs.json
+data/jobs.tmp
+data/huggingface/
+
+# 媒体与下载缓存
+media/inbox/*
+media/output/*
+media/downloads/*
+!media/downloads/.gitkeep
+fonts/*
+!fonts/.gitkeep
+
+# 第三方服务配置（含 API Key、Cookie、会话）
+prowlarr/config/
+qbittorrent/config/
+station/config/*
+station/data/*
+station/logs/*
+jellyfin/config/*
+jellyfin/cache/*
+
+# 本地工具和虚拟环境
+.venv/
+local-tools/
+
+__pycache__/
+*.pyc
+*.log
+
+# 打包产物
+dist/
+
+data/title_cache.json
+data/magnets/
+data/transcripts/
+data/translations/
+data/share_secret.txt
+*.bak
