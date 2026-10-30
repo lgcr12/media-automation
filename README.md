@@ -431,6 +431,25 @@ Get-Content D:\Code\media-automation\data\autostart.log -Tail 20
 powershell -ExecutionPolicy Bypass -File D:\Code\media-automation\scripts\autostart.ps1
 ```
 
+### 搜索很慢怎么办
+
+整次搜索的耗时取决于**最慢的那个索引器**。用下面的命令看每个站的实际耗时：
+
+```powershell
+# Prowlarr API Key 在 Settings → General 里
+$h = @{ 'X-Api-Key' = '<你的API Key>' }
+Invoke-RestMethod "http://127.0.0.1:9696/api/v1/indexer" -Headers $h |
+  Where-Object { $_.enable } | ForEach-Object {
+    $sw = [Diagnostics.Stopwatch]::StartNew()
+    $null = Invoke-RestMethod "http://127.0.0.1:9696/api/v1/search?query=test&type=search&limit=3&indexerIds=$($_.id)" -Headers $h -TimeoutSec 150
+    "{0,-24} {1}s" -f $_.name, [int]$sw.Elapsed.TotalSeconds
+  }
+```
+
+单站超过 30 秒的建议在 Prowlarr 里停用（**Mikan 实测 97~100 秒**，停用后整次搜索从 90 秒降到 10 秒左右）。
+
+> 重启后第一次搜索会慢一些：FlareSolverr 的 Cookie 失效，需要重新过 Cloudflare 挑战。
+
 ---
 
 ## 🤝 贡献
