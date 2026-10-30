@@ -401,10 +401,34 @@ data/
   settings.json   运行时配置（含密钥，已忽略）
   jobs.json       任务状态（已忽略）
   transcripts/    转录缓存
-scripts/          start / stop / indexers / open-lan / fix-hotspot
+scripts/          start / stop / indexers / open-lan / fix-hotspot / autostart
 docker-compose.yml
 .env.example
 WINDOWS.md        Windows 部署与排错详解
+```
+
+---
+
+## 🔁 断电 / 重启后自动恢复
+
+容器都设了 `restart: unless-stopped`，Docker 引擎一起来它们就会自动恢复。但 Docker Desktop 本身如果没启动，就什么都起不来——所以做了三层保险：
+
+| 层级 | 机制 | 负责什么 |
+|---|---|---|
+| 1 | Docker Desktop 注册表自启 + `AutoStart=true` | 登录后启动 Docker Desktop |
+| 2 | 容器 `restart: unless-stopped` | Docker 就绪后自动拉起 6 个容器 |
+| 3 | `scripts/autostart.ps1`（登录后延迟 2 分钟） | 兜底：Docker 没起来就拉起、等引擎就绪、再 `compose up`、最后验证 worker 健康 |
+
+兜底脚本每次执行都会写日志到 `data/autostart.log`，出问题时先看这里：
+
+```powershell
+Get-Content D:\Code\media-automation\data\autostart.log -Tail 20
+```
+
+手动执行（排查用）：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File D:\Code\media-automation\scripts\autostart.ps1
 ```
 
 ---

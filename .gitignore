@@ -42,3 +42,4 @@ data/transcripts/
 data/translations/
 data/share_secret.txt
 *.bak
+data/autostart.log
